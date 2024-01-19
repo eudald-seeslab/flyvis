@@ -13,12 +13,11 @@ from flyvision.animations import StimulusResponse
 from flyvision.datasets.base import SequenceDataset
 from flyvision.utils.activity_utils import LayerActivity
 
-plt.rcParams['figure.dpi'] = 200
 np.random.seed(42)
 
-DECODED_CELLS = ["T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d", "T1", "T2", "T2a", "T3", "Tm1", "Tm2",
+DECODING_CELLS = ["T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d", "T1", "T2", "T2a", "T3", "Tm1", "Tm2",
                  "Tm3", "Tm4", "Tm5Y", "Tm5a", "Tm5b", "Tm5c", "Tm9", "Tm16", "Tm20", "Tm28", "Tm30", "TmY3", "TmY4",
-                 "TmY5a", "TmY9", "TmY10", "TmY13", "TmY14", "TmY15", "TmY16"]
+                 "TmY5a", "TmY9", "TmY10", "TmY13", "TmY14", "TmY15", "TmY18"]
 FINAL_CELLS = ["TmY15", "TmY16"]
 
 
@@ -30,29 +29,24 @@ def load_custom_sequences(video_dir):
 
 
 class RenderedData:
-    class Config(dict):
-        input_path: str  # path to the input data
-        extent: int  # radius, in number of receptors of the hexagonal array.
-        kernel_size: int  # photon collection radius, in pixels.
-        subset_idx: List[int]  # if specified, subset of sequences to render
 
-    def __init__(self, config: Config):
+    def __init__(self, input_path, extent, kernel_size, subset_idx=None):
         # here comes the preprocessing and rendering as above or similar -- depending on the dataset etc.
         # this code will be executed automatically once for each unique configuration to store preprocessed
         # data on disk and later simply provide a reference to it.
-        sequences = load_custom_sequences(config["input_path"])
+        if subset_idx is None:
+            subset_idx = []
+        sequences = load_custom_sequences(input_path)
 
         # we use the configuration to control the settings under which we render the stimuli
         receptors = flyvision.rendering.BoxEye(
-            extent=config["extent"], kernel_size=config["kernel_size"]
+            extent=extent, kernel_size=kernel_size
         )
 
         # for memory-friendly rendering we can loop over individual sequences
         # and subsets of the dataset
         rendered_sequences = []
-        subset_idx = getattr(config, "subset_idx", []) or list(
-            range(sequences.shape[0])
-        )
+        subset_idx = subset_idx if len(subset_idx) > 0 else list(range(sequences.shape[0]))
         with tqdm(total=len(subset_idx)) as pbar:
             for index in subset_idx:
                 rendered_sequences.append(receptors(sequences[[index]]).cpu().numpy())
@@ -76,8 +70,8 @@ class CustomStimuli(SequenceDataset):
     n_sequences = None
     augment = False
 
-    def __init__(self, rendered_data_config: dict):
-        self.dir = RenderedData(rendered_data_config)
+    def __init__(self, input_path, extent, kernel_size, subset_idx):
+        self.dir = RenderedData(input_path, extent, kernel_size, subset_idx)
         self.sequences = torch.Tensor(self.dir.sequences[:])
         self.n_sequences = self.sequences.shape[0]
 
@@ -104,17 +98,20 @@ class ResponseProcessor:
         self.ensemble = EnsembleView(flyvision.results_dir / "opticflow/000")
 
     def compute_responses(self):
-        data = CustomStimuli(dict(input_path="../videos/yellow", extent=15, kernel_size=13, subset_idx=[]))
-        self.movie_input = data[0]
+        data = CustomStimuli(input_path="../videos/yellow", extent=15, kernel_size=13, subset_idx=[])
 
         # ensemble.simulate returns an iterator over `network.simulate` for each network.
         # we exhaust it and stack responses from all models in the first dimension
-        return np.array(list(self.ensemble.simulate(self.movie_input[None], data.dt, fade_in=True)))
+        return [self.network.simulate(a[None], data.dt) for a in data]
 
     def compute_layer_activations(self, _responses=None):
         if _responses is None:
             _responses = self.compute_responses()
-        return LayerActivity(_responses, self.network.connectome, keepref=True)
+
+        la = []
+        for response in _responses:
+            la.append(LayerActivity(response, self.network.connectome, keepref=True))
+        return la
 
     def compute_animations(self, cell_type, _responses=None):
         if _responses is None:
@@ -136,6 +133,9 @@ if __name__ == "__main__":
     responses = response_processor.compute_responses()
     # compute the layer activations
     layer_activations = response_processor.compute_layer_activations(responses)
+    # save layer activations from decoding cells
+
+
     # get the animation objects to inspect them
     animations = response_processor.compute_animations("TmY15", responses)
     # animate the responses
