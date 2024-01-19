@@ -93,7 +93,7 @@ class BoxEye:
         self.conv.bias.requires_grad = False  # self.requires_grad
 
     def __call__(
-        self, sequence: torch.Tensor, ftype: str = "mean", hex_sample: bool = True
+        self, sequence: np.array, ftype: str = "mean", hex_sample: bool = True
     ) -> torch.Tensor:
         """Applies a box kernel to all frames in a sequence.
 

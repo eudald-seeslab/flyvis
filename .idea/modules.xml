@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/../connectome/.idea/connectome.iml" filepath="$PROJECT_DIR$/../connectome/.idea/connectome.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/flyvis.iml" filepath="$PROJECT_DIR$/.idea/flyvis.iml" />
     </modules>
   </component>
